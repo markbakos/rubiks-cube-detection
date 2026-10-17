@@ -18,7 +18,7 @@ class ManualSelectionTests(unittest.TestCase):
         callbacks = []
 
         def keypress(delay):
-            clicks, key = next(actions)
+            clicks, key = next(actions, ([], 27))
             for x, y in clicks:
                 callbacks[0](cv2.EVENT_LBUTTONDOWN, x, y, 0, None)
             return key
@@ -87,6 +87,18 @@ class ManualSelectionTests(unittest.TestCase):
         self.assertEqual(mode, "Automatic")
         np.testing.assert_array_equal(corners, automatic)
 
+    def test_reset_preserves_automatic_mode_after_manual_switches(self):
+        image = np.zeros((300, 300, 3), dtype=np.uint8)
+        automatic = np.float32([[0, 0], [299, 0], [299, 299], [0, 299]])
+        for keys in ("mrar", "MRAR"):
+            with self.subTest(keys=keys):
+                actions = iter([([], ord(key)) for key in keys] + [([], 13)])
+                selection = self.run_selection(image, actions, manual=False, candidates=[automatic])
+                self.assertIsNotNone(selection)
+                corners, mode = selection
+                self.assertEqual(mode, "Automatic")
+                np.testing.assert_array_equal(corners, automatic)
+
     def test_escape_cancels(self):
         self.assertIsNone(self.run_selection(np.zeros((300, 300, 3), dtype=np.uint8), iter([([], 27)])))
 
@@ -102,6 +114,25 @@ class ManualSelectionTests(unittest.TestCase):
 
 
 class ApplicationTests(unittest.TestCase):
+    def test_result_reset_preserves_mode_after_switching_back_to_automatic(self):
+        face, _ = make_face()
+        corners = np.float32([[0, 0], [299, 0], [299, 299], [0, 299]])
+        selections = [(corners, "Automatic"), (corners, "Manual"), (corners, "Automatic"), None]
+        with (
+            patch("sys.argv", ["main.py", "cube.png"]),
+            patch.dict("os.environ", {"DISPLAY": ":test"}),
+            patch.object(main, "load_image", return_value=face),
+            patch.object(main, "select_face", side_effect=selections) as selection,
+            patch.object(main, "window_open", return_value=True),
+            patch.object(cv2, "imshow"),
+            patch.object(cv2, "waitKey", side_effect=[ord("m"), ord("a"), ord("r")]),
+            patch.object(cv2, "destroyWindow"),
+            patch.object(cv2, "destroyAllWindows"),
+            redirect_stdout(io.StringIO()),
+        ):
+            self.assertEqual(main.main(), 0)
+        self.assertEqual([call.kwargs["manual"] for call in selection.call_args_list], [False, True, False, False])
+
     def test_manual_pipeline_prints_matrix_and_allows_reselection(self):
         face, expected = make_face()
         corners = np.float32([[0, 0], [299, 0], [299, 299], [0, 299]])

@@ -16,7 +16,7 @@ python main.py path/to/cube.jpg
 The application automatically outlines one detected face. Press Enter to accept
 the outline and recognize its nine colors. A runs automatic selection again.
 
-Press M or R to select manually, or start with:
+Press M to select manually, or start with:
 
 ```bash
 python main.py images/Rubik01.jpg --manual
@@ -24,6 +24,7 @@ python main.py images/Rubik01.jpg --manual
 
 For manual selection, click the four outer corners clockwise: top-left,
 top-right, bottom-right, bottom-left. Press Enter to recognize.
+R resets the current mode: it clears manual points or reruns automatic detection.
 If automatic detection finds no reliable face, manual selection opens instead.
 Q, Escape, or closing either window exits.
 

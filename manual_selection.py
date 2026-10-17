@@ -32,7 +32,7 @@ def select_face(image, manual=False):
         canvas[HEADER_HEIGHT:, :display_width] = display
         for y, text, color in (
             (25, "Click corners: 1 TL -> 2 TR -> 3 BR -> 4 BL" if mode == "Manual" else "Automatic face selected - ENTER accept or M select manually", (245, 245, 245)),
-            (50, "ENTER recognize | A auto | M / R manual | Q / ESC quit", (190, 190, 190)),
+            (50, "ENTER recognize | A auto | M manual | R reset | Q / ESC quit", (190, 190, 190)),
             (78, f"{mode} {len(points)}/4  {message}", (80, 220, 255)),
         ):
             cv2.putText(canvas, text, (12, y), cv2.FONT_HERSHEY_SIMPLEX, 0.5, color, 1, cv2.LINE_AA)
@@ -82,7 +82,9 @@ def select_face(image, manual=False):
         key = cv2.waitKey(20) & 0xFF
         if key in (27, ord("q"), ord("Q")) or not window_open(WINDOW):
             return None
-        if key in (ord("r"), ord("R"), ord("m"), ord("M")):
+        if key in (ord("r"), ord("R")):
+            key = ord("a") if mode == "Automatic" else ord("m")
+        if key in (ord("m"), ord("M")):
             points.clear()
             mode = "Manual"
             message = "Select the outer corners of one complete 3x3 face."

@@ -20,7 +20,7 @@ def draw_result(face, matrix):
     for text, position in (
         ("Rectified face + sample regions", (15, 30)),
         ("Recognized colors", (345, 30)),
-        ("A automatic | R / M manual | Q / ESC quit", (15, 380)),
+        ("A automatic | M manual | R reset | Q / ESC quit", (15, 380)),
         ("F White   Z Green   P Red   K Blue   N Orange   S Yellow   ? Unknown", (15, 400)),
     ):
         cv2.putText(canvas, text, position, cv2.FONT_HERSHEY_SIMPLEX, 0.45, (240, 240, 240), 1, cv2.LINE_AA)
@@ -70,7 +70,7 @@ def main():
                 ):
                     return 0
                 if key in (ord("r"), ord("R"), ord("m"), ord("M"), ord("a"), ord("A")):
-                    manual = key not in (ord("a"), ord("A"))
+                    manual = mode == "Manual" if key in (ord("r"), ord("R")) else key in (ord("m"), ord("M"))
                     cv2.destroyWindow(RESULT_WINDOW)
                     break
     except (ValueError, cv2.error) as error:

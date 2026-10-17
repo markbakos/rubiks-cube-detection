@@ -48,3 +48,30 @@ def rectify_face(image, corners):
     destination = np.float32([[0, 0], [299, 0], [299, 299], [0, 299]])
     transform = cv2.getPerspectiveTransform(corners, destination)
     return cv2.warpPerspective(image, transform, (300, 300))
+
+
+def process_image(image, noise="none", level=0, filter_method="none", seed=0):
+    if image.dtype != np.uint8 or image.ndim != 3 or image.shape[2] != 3 or image.size == 0:
+        raise ValueError("Expected a nonempty 8-bit BGR image.")
+    if noise not in ("none", "gaussian", "salt-pepper"):
+        raise ValueError("Unknown noise type.")
+    maximum = 1 if noise == "salt-pepper" else 255 if noise == "gaussian" else 0
+    if not np.isfinite(level) or not 0 <= level <= maximum:
+        raise ValueError(f"Noise level for {noise} must be between 0 and {maximum}.")
+    if filter_method not in ("none", "gaussian", "median"):
+        raise ValueError("Unknown filter type.")
+    rng = np.random.default_rng(seed)
+    noisy = image.copy()
+    if noise == "gaussian" and level:
+        noisy = np.clip(np.rint(image.astype(np.float32) + rng.normal(0, level, image.shape)), 0, 255).astype(np.uint8)
+    elif noise == "salt-pepper" and level:
+        mask = rng.random(image.shape[:2])
+        noisy[mask < level / 2] = 0
+        noisy[mask >= 1 - level / 2] = 255
+    if filter_method == "gaussian":
+        processed = cv2.GaussianBlur(noisy, (5, 5), 0)
+    elif filter_method == "median":
+        processed = cv2.medianBlur(noisy, 3)
+    else:
+        processed = noisy.copy()
+    return noisy, processed

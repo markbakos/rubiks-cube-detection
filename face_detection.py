@@ -6,23 +6,31 @@ import numpy as np
 
 def _merge_lines(segments, tolerance):
     merged = []
+    directions = []
+    normals = []
     lengths = np.linalg.norm(segments[:, 2:] - segments[:, :2], axis=1)
     for segment in segments[np.argsort(-lengths)]:
         endpoints = segment.reshape(2, 2).astype(np.float64)
-        for existing in merged:
-            direction = existing[1] - existing[0]
-            direction /= np.linalg.norm(direction)
-            normal = np.array([-direction[1], direction[0]])
-            distances = (endpoints - existing[0]) @ normal
-            if np.max(np.abs(distances)) <= tolerance:
-                positions = (endpoints - existing[0]) @ direction
-                length = np.linalg.norm(existing[1] - existing[0])
-                start = existing[0].copy()
-                existing[0] = start + min(0, positions.min()) * direction
-                existing[1] = start + max(length, positions.max()) * direction
-                break
+        matches = []
+        if merged:
+            starts = np.asarray(merged)[:, 0]
+            distances = np.abs(np.sum((endpoints[None] - starts[:, None]) * np.asarray(normals)[:, None], axis=2))
+            matches = np.flatnonzero(distances.max(axis=1) <= tolerance)
+        if len(matches):
+            index = matches[0]
+            existing = merged[index]
+            direction = directions[index]
+            positions = (endpoints - existing[0]) @ direction
+            length = np.linalg.norm(existing[1] - existing[0])
+            start = existing[0].copy()
+            existing[0] = start + min(0, positions.min()) * direction
+            existing[1] = start + max(length, positions.max()) * direction
         else:
             merged.append(endpoints)
+            direction = endpoints[1] - endpoints[0]
+            direction /= np.linalg.norm(direction)
+            directions.append(direction)
+            normals.append([-direction[1], direction[0]])
     merged.sort(key=lambda line: np.linalg.norm(line[1] - line[0]), reverse=True)
     return np.array(merged[:40])
 

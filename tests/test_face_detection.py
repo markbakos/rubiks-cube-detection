@@ -5,8 +5,9 @@ import cv2
 import numpy as np
 
 from color_detection import recognize_face
-from face_detection import find_face_candidates
-from image_processing import load_image, rectify_face, validate_corners
+from evaluation import load_annotations
+from face_detection import _merge_lines, find_face_candidates
+from image_processing import rectify_face, validate_corners
 from test_recognition import make_face
 
 
@@ -16,6 +17,11 @@ def overlap(first, second):
 
 
 class FaceDetectionTests(unittest.TestCase):
+    def test_collinear_segments_merge_without_merging_separate_grid_lines(self):
+        segments = np.array([[0, 0, 100, 0], [90, 1, 200, 1], [0, 30, 150, 30], [0, 60, 50, 60]])
+        merged = _merge_lines(segments, 2)
+        np.testing.assert_allclose(merged, [[[0, 1], [200, 1]], [[0, 30], [150, 30]], [[0, 60], [50, 60]]])
+
     def test_perspective_face_and_original_coordinate_scaling(self):
         face, expected = make_face()
         square = np.float32([[0, 0], [299, 0], [299, 299], [0, 299]])
@@ -55,34 +61,15 @@ class FaceDetectionTests(unittest.TestCase):
         self.assertEqual(find_face_candidates(image), [])
 
     def test_supplied_photographs_include_a_complete_verified_face(self):
-        references = {
-            "Rubik01.jpg": (
-                [[323, 78], [669, 215], [434, 537], [85, 360]],
-                [["P", "Z", "P"], ["K", "S", "F"], ["P", "F", "P"]],
-            ),
-            "Rubik02.jpg": (
-                [[189, 94], [392, 0], [590, 94], [391, 212]],
-                [["P", "F", "P"], ["F", "K", "F"], ["K", "F", "F"]],
-            ),
-            "Rubik03.jpg": (
-                [[132, 220], [303, 95], [562, 130], [460, 289]],
-                [["K", "S", "Z"], ["Z", "P", "P"], ["Z", "Z", "Z"]],
-            ),
-            "Rubik04.png": (
-                [[80, 176], [414, 62], [725, 178], [397, 315]],
-                [["K", "F", "Z"], ["F", "S", "P"], ["P", "K", "N"]],
-            ),
-        }
         directory = Path(__file__).resolve().parents[1] / "images"
-        for filename, (corners, expected) in references.items():
+        for filename, image, faces in load_annotations(directory / "annotations.json"):
             with self.subTest(image=filename):
-                image = load_image(directory / filename)
-                reference = np.float32(corners)
+                reference, expected = faces[0]
                 candidates = find_face_candidates(image)
                 self.assertTrue(candidates)
                 match = max(candidates, key=lambda candidate: overlap(candidate, reference))
                 self.assertGreater(overlap(match, reference), 0.85)
-                self.assertEqual(recognize_face(rectify_face(image, match)), expected)
+                self.assertEqual(recognize_face(rectify_face(image, match)), expected.tolist())
 
 
 if __name__ == "__main__":

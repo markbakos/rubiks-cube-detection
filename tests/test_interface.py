@@ -14,13 +14,13 @@ from test_recognition import make_face
 
 
 class ManualSelectionTests(unittest.TestCase):
-    def run_selection(self, image, actions, manual=True, candidates=None):
+    def run_selection(self, image, actions, manual=True, candidates=None, settings=None):
         callbacks = []
 
         def keypress(delay):
             clicks, key = next(actions, ([], 27))
             for x, y in clicks:
-                callbacks[0](cv2.EVENT_LBUTTONDOWN, x, y, 0, None)
+                callbacks[0](cv2.EVENT_LBUTTONDOWN, x, y + manual_selection.HEADER_HEIGHT, 0, None)
             return key
 
         with (
@@ -31,27 +31,51 @@ class ManualSelectionTests(unittest.TestCase):
             patch.object(cv2, "waitKey", side_effect=keypress),
             patch.object(manual_selection, "find_face_candidates", return_value=candidates or []),
         ):
-            return manual_selection.select_face(image, manual=manual)
+            return manual_selection.select_face(image, manual=manual, settings=settings)
+
+    def test_noise_changes_preserve_manual_points_and_restore_the_original(self):
+        image, _ = make_face()
+        original = image.copy()
+        settings = {"noise": "none", "level": 0, "filter_method": "none", "seed": 7}
+        actions = iter([
+            ([(10, 10), (290, 10), (290, 290), (10, 290)], ord("g")),
+            ([], ord("p")), ([], ord("f")), ([], ord("o")), ([], 13),
+        ])
+        corners, mode = self.run_selection(image, actions, settings=settings)
+        self.assertEqual(mode, "Manual")
+        self.assertEqual(settings, {"noise": "none", "level": 0, "filter_method": "none", "seed": 7})
+        np.testing.assert_array_equal(corners, [[10, 10], [290, 10], [290, 290], [10, 290]])
+        np.testing.assert_array_equal(image, original)
+
+    def test_noise_and_filter_presets_cycle(self):
+        settings = {"noise": "none", "level": 0, "filter_method": "none", "seed": 0}
+        for key, noise, level in (("G", "gaussian", 5), ("g", "gaussian", 15), ("g", "gaussian", 30), ("g", "gaussian", 5), ("p", "salt-pepper", 0.005), ("p", "salt-pepper", 0.02), ("p", "salt-pepper", 0.05), ("p", "salt-pepper", 0.005)):
+            self.assertTrue(manual_selection.change_experiment(settings, ord(key)))
+            self.assertEqual((settings["noise"], settings["level"]), (noise, level))
+        for method in ("gaussian", "median", "none"):
+            self.assertTrue(manual_selection.change_experiment(settings, ord("f")))
+            self.assertEqual(settings["filter_method"], method)
+        self.assertFalse(manual_selection.change_experiment(settings, ord("r")))
 
     def test_resized_click_coordinates_and_ignored_clicks(self):
         image = np.zeros((1600, 2000, 3), dtype=np.uint8)
         actions = iter([
-            ([(0, 0), (800, 200), (10, 110), (700, 110), (700, 700), (10, 700), (20, 200)], 13),
+            ([(0, -1), (800, 100), (10, 10), (650, 10), (650, 500), (10, 500), (20, 100)], 13),
         ])
         corners, mode = self.run_selection(image, actions)
         np.testing.assert_allclose(
             corners,
-            np.array([[10, 10], [700, 10], [700, 600], [10, 600]]) * [2000 / 775, 1600 / 620],
+            np.array([[10, 10], [650, 10], [650, 500], [10, 500]]) * [2000 / 688, 1600 / 550],
             rtol=1e-6,
         )
 
     def test_incomplete_invalid_selection_and_reset(self):
         image = np.zeros((300, 300, 3), dtype=np.uint8)
         actions = iter([
-            ([(10, 110), (290, 390)], 13),
-            ([(290, 110), (10, 390)], 13),
+            ([(10, 10), (290, 290)], 13),
+            ([(290, 10), (10, 290)], 13),
             ([], ord("r")),
-            ([(10, 110), (290, 110), (290, 390), (10, 390)], 13),
+            ([(10, 10), (290, 10), (290, 290), (10, 290)], 13),
         ])
         corners, mode = self.run_selection(image, actions)
         np.testing.assert_array_equal(corners, [[10, 10], [290, 10], [290, 290], [10, 290]])
@@ -64,7 +88,7 @@ class ManualSelectionTests(unittest.TestCase):
                 actions = []
                 if override:
                     actions.append(([], ord("m")))
-                    actions.append(([(10, 110), (290, 110), (290, 390), (10, 390)], 13))
+                    actions.append(([(10, 10), (290, 10), (290, 290), (10, 290)], 13))
                 else:
                     actions.append(([], 13))
                 corners, mode = self.run_selection(image, iter(actions), manual=False, candidates=[automatic])
@@ -74,7 +98,7 @@ class ManualSelectionTests(unittest.TestCase):
 
     def test_failed_automatic_detection_falls_back_to_manual(self):
         image = np.zeros((300, 300, 3), dtype=np.uint8)
-        actions = iter([([(10, 110), (290, 110), (290, 390), (10, 390)], 13)])
+        actions = iter([([(10, 10), (290, 10), (290, 290), (10, 290)], 13)])
         corners, mode = self.run_selection(image, actions, manual=False)
         self.assertEqual(mode, "Manual")
         np.testing.assert_array_equal(corners, [[10, 10], [290, 10], [290, 290], [10, 290]])
@@ -114,6 +138,47 @@ class ManualSelectionTests(unittest.TestCase):
 
 
 class ApplicationTests(unittest.TestCase):
+    def test_noise_changes_in_manual_results_reuse_corners_without_accumulating_noise(self):
+        face, _ = make_face()
+        original = face.copy()
+        corners = np.float32([[0, 0], [299, 0], [299, 299], [0, 299]])
+        with (
+            patch("sys.argv", ["main.py", "cube.png", "--manual"]),
+            patch.dict("os.environ", {"DISPLAY": ":test"}),
+            patch.object(main, "load_image", return_value=face),
+            patch.object(main, "select_face", return_value=(corners, "Manual")) as selection,
+            patch.object(main, "show_recognition") as recognition,
+            patch.object(main, "window_open", return_value=True),
+            patch.object(cv2, "imshow"),
+            patch.object(cv2, "waitKey", side_effect=[ord(key) for key in "gpfoq"]),
+            patch.object(cv2, "destroyAllWindows"),
+        ):
+            self.assertEqual(main.main(), 0)
+        selection.assert_called_once()
+        self.assertEqual(recognition.call_count, 5)
+        np.testing.assert_array_equal(recognition.call_args.args[0], original)
+        np.testing.assert_array_equal(face, original)
+
+    def test_noise_changes_in_automatic_results_request_new_detection(self):
+        face, _ = make_face()
+        corners = np.float32([[0, 0], [299, 0], [299, 299], [0, 299]])
+        with (
+            patch("sys.argv", ["main.py", "cube.png"]),
+            patch.dict("os.environ", {"DISPLAY": ":test"}),
+            patch.object(main, "load_image", return_value=face),
+            patch.object(main, "select_face", side_effect=[(corners, "Automatic"), None]) as selection,
+            patch.object(main, "window_open", return_value=True),
+            patch.object(cv2, "imshow"),
+            patch.object(cv2, "waitKey", return_value=ord("g")),
+            patch.object(cv2, "destroyWindow"),
+            patch.object(cv2, "destroyAllWindows"),
+            redirect_stdout(io.StringIO()),
+        ):
+            self.assertEqual(main.main(), 0)
+        self.assertFalse(selection.call_args.kwargs["manual"])
+        self.assertEqual(selection.call_args.kwargs["settings"]["noise"], "gaussian")
+        self.assertEqual(selection.call_args.kwargs["settings"]["level"], 5)
+
     def test_result_reset_preserves_mode_after_switching_back_to_automatic(self):
         face, _ = make_face()
         corners = np.float32([[0, 0], [299, 0], [299, 299], [0, 299]])
@@ -157,7 +222,7 @@ class ApplicationTests(unittest.TestCase):
             self.assertTrue(selection.call_args.kwargs["manual"])
             close_result.assert_called_once_with(main.RESULT_WINDOW)
             close_all.assert_called_once()
-            self.assertEqual(display.call_args.args[1].shape, (410, 660, 3))
+            self.assertEqual(display.call_args.args[1].shape, (435, 660, 3))
         self.assertIn("Detection mode: Manual", output.getvalue())
         self.assertIn("\n".join(" ".join(row) for row in expected), output.getvalue())
 

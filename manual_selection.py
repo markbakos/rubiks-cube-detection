@@ -2,6 +2,7 @@ import cv2
 import numpy as np
 
 from image_processing import validate_corners
+from face_detection import find_face_candidates
 
 
 WINDOW = "Cube face selection"
@@ -15,7 +16,7 @@ def window_open(name):
         return False
 
 
-def select_face_manually(image):
+def select_face(image, manual=False):
     height, width = image.shape[:2]
     scale = min(1.0, 1000 / width, 620 / height)
     display_width = max(1, round(width * scale))
@@ -23,15 +24,16 @@ def select_face_manually(image):
     display = cv2.resize(image, (display_width, display_height))
     canvas_width = max(660, display_width)
     points = []
+    mode = "Manual"
     message = "Select the outer corners of one complete 3x3 face."
 
     def redraw():
         canvas = np.full((display_height + HEADER_HEIGHT, canvas_width, 3), 28, dtype=np.uint8)
         canvas[HEADER_HEIGHT:, :display_width] = display
         for y, text, color in (
-            (25, "Click corners: 1 TL -> 2 TR -> 3 BR -> 4 BL", (245, 245, 245)),
-            (50, "ENTER recognize | R reset | Q / ESC quit", (190, 190, 190)),
-            (78, f"{len(points)}/4  {message}", (80, 220, 255)),
+            (25, "Click corners: 1 TL -> 2 TR -> 3 BR -> 4 BL" if mode == "Manual" else "Automatic face selected - ENTER accept or M select manually", (245, 245, 245)),
+            (50, "ENTER recognize | A auto | M / R manual | Q / ESC quit", (190, 190, 190)),
+            (78, f"{mode} {len(points)}/4  {message}", (80, 220, 255)),
         ):
             cv2.putText(canvas, text, (12, y), cv2.FONT_HERSHEY_SIMPLEX, 0.5, color, 1, cv2.LINE_AA)
         if points:
@@ -59,6 +61,20 @@ def select_face_manually(image):
         message = "Press ENTER to recognize, or R to start again." if len(points) == 4 else "Continue clockwise around the face."
         redraw()
 
+    def choose_automatically():
+        nonlocal mode, message
+        points.clear()
+        candidates = find_face_candidates(image)
+        if candidates:
+            points.extend(candidates[0].tolist())
+            mode = "Automatic"
+            message = "Check the outline, then press ENTER."
+        else:
+            mode = "Manual"
+            message = "No reliable face found. Select corners manually."
+
+    if not manual:
+        choose_automatically()
     cv2.namedWindow(WINDOW, cv2.WINDOW_AUTOSIZE)
     cv2.setMouseCallback(WINDOW, on_mouse)
     redraw()
@@ -66,13 +82,17 @@ def select_face_manually(image):
         key = cv2.waitKey(20) & 0xFF
         if key in (27, ord("q"), ord("Q")) or not window_open(WINDOW):
             return None
-        if key in (ord("r"), ord("R")):
+        if key in (ord("r"), ord("R"), ord("m"), ord("M")):
             points.clear()
+            mode = "Manual"
             message = "Select the outer corners of one complete 3x3 face."
+            redraw()
+        elif key in (ord("a"), ord("A")):
+            choose_automatically()
             redraw()
         elif key in (10, 13):
             try:
-                return validate_corners(image, points)
+                return validate_corners(image, points), mode
             except ValueError as error:
                 message = str(error)
                 redraw()

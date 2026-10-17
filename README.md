@@ -13,9 +13,18 @@ python -m pip install -r requirements.txt
 python main.py path/to/cube.jpg
 ```
 
-Click the four outer corners of one complete face, clockwise: top-left,
-top-right, bottom-right, bottom-left. Press Enter to recognize its nine colors.
-R resets the selection; R or M selects another face after recognition.
+The application automatically outlines one detected face. Press Enter to accept
+the outline and recognize its nine colors. A runs automatic selection again.
+
+Press M or R to select manually, or start with:
+
+```bash
+python main.py images/Rubik01.jpg --manual
+```
+
+For manual selection, click the four outer corners clockwise: top-left,
+top-right, bottom-right, bottom-left. Press Enter to recognize.
+If automatic detection finds no reliable face, manual selection opens instead.
 Q, Escape, or closing either window exits.
 
 The result shows the corrected face, sample regions, and a 3×3 color matrix.

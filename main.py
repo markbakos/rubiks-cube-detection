@@ -8,7 +8,7 @@ import numpy as np
 
 from color_detection import COLORS, recognize_face
 from image_processing import load_image, rectify_face
-from manual_selection import WINDOW, select_face_manually, window_open
+from manual_selection import WINDOW, select_face, window_open
 
 
 RESULT_WINDOW = "Recognized face"
@@ -20,7 +20,7 @@ def draw_result(face, matrix):
     for text, position in (
         ("Rectified face + sample regions", (15, 30)),
         ("Recognized colors", (345, 30)),
-        ("R / M reselect | Q / ESC quit", (15, 380)),
+        ("A automatic | R / M manual | Q / ESC quit", (15, 380)),
         ("F White   Z Green   P Red   K Blue   N Orange   S Yellow   ? Unknown", (15, 400)),
     ):
         cv2.putText(canvas, text, position, cv2.FONT_HERSHEY_SIMPLEX, 0.45, (240, 240, 240), 1, cv2.LINE_AA)
@@ -40,9 +40,10 @@ def draw_result(face, matrix):
 
 def main():
     parser = argparse.ArgumentParser(
-        description="Rubik's Cube single-face recognition with manual corner selection."
+        description="Rubik's Cube single-face recognition with automatic or manual selection."
     )
     parser.add_argument("image", type=Path, help="Path to a cube photograph (JPEG or PNG).")
+    parser.add_argument("--manual", action="store_true", help="Start with manual corner selection.")
     args = parser.parse_args()
 
     try:
@@ -51,13 +52,15 @@ def main():
             os.environ.get("DISPLAY") or os.environ.get("WAYLAND_DISPLAY")
         ):
             raise ValueError("No desktop display available. Run this application in a graphical desktop session.")
+        manual = args.manual
         while True:
-            corners = select_face_manually(image)
-            if corners is None:
+            selection = select_face(image, manual=manual)
+            if selection is None:
                 return 0
+            corners, mode = selection
             face = rectify_face(image, corners)
             matrix = recognize_face(face)
-            print("\nDetected face: 1\nDetection mode: Manual\n")
+            print(f"\nDetected face: 1\nDetection mode: {mode}\n")
             print("\n".join(" ".join(row) for row in matrix), flush=True)
             cv2.imshow(RESULT_WINDOW, draw_result(face, matrix))
             while True:
@@ -66,7 +69,8 @@ def main():
                     window_open(WINDOW) and window_open(RESULT_WINDOW)
                 ):
                     return 0
-                if key in (ord("r"), ord("R"), ord("m"), ord("M")):
+                if key in (ord("r"), ord("R"), ord("m"), ord("M"), ord("a"), ord("A")):
+                    manual = key not in (ord("a"), ord("A"))
                     cv2.destroyWindow(RESULT_WINDOW)
                     break
     except (ValueError, cv2.error) as error:
